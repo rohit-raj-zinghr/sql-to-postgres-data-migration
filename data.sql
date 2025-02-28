@@ -20,7 +20,7 @@ CREATE TABLE public."Flatt" (
 
 ---ye query se pgadmin me data migrate--
 
-SELECT TOP 100
+SELECT TOP 10
     re.ed_empcode AS EmpCode,
     re.ed_Salutation, 
     re.ed_firstname, 
@@ -37,51 +37,66 @@ SELECT TOP 100
 
     -- Shift details JSON
     (
-      SELECT 
-          ro_inner.ShiftID,
-          MIN(ro_inner.AttMode) AS AttMode,
-          MIN(ro_inner.DiffIN) AS DiffIN,
-          MIN(ro_inner.DiffOUT) AS DiffOUT,
-          MIN(ro_inner.TotalworkedMinutes) AS TotalworkedMinutes,
-          MIN(ro_inner.RegIN) AS RegIN,
-       MIN(ro_inner.RegOut) AS RegOut,
-         MIN(ro_inner.FromMin) AS FromMin,
-         MIN(ro_inner.ToMin) AS tomin,
-          MIN(sht_inner.ShiftName) AS ShiftName
-      FROM tna.Rostering AS ro_inner
-      INNER JOIN tna.ShiftMst AS sht_inner 
-          ON ro_inner.ShiftId = sht_inner.ShiftId
-      WHERE ro_inner.EmpCode = re.ed_empcode
-      GROUP BY ro_inner.ShiftID
-      FOR JSON PATH
+        SELECT 
+            ro_inner.ShiftID,
+            MIN(ro_inner.AttMode) AS AttMode,
+            MIN(ro_inner.DiffIN) AS DiffIN,
+            MIN(ro_inner.DiffOUT) AS DiffOUT,
+            MIN(ro_inner.TotalworkedMinutes) AS TotalworkedMinutes,
+            MIN(ro_inner.RegIN) AS RegIN,
+            MIN(ro_inner.RegOut) AS RegOut,
+            MIN(ro_inner.FromMin) AS FromMin,
+            MIN(ro_inner.ToMin) AS ToMin,
+            MIN(sht_inner.ShiftName) AS ShiftName,
+            MIN(ro_inner.Date) AS ShiftStart,
+            MAX(ro_inner.Date) AS ShiftEnd,
+            MIN(sht_inner.InTime) AS InTime,
+            MAX(sht_inner.OutTime) AS OutTime,
+            MAX(sht_inner.TotalMinutes) AS TotalMinutes,
+            MIN(sht_inner.SwipesSeperatorParam) AS SwipesSeperatorParam,
+            MIN(CAST(sht_inner.ISWorkBtwnShifttime AS TINYINT)) AS ISWorkBtwnShifttime,
+            MIN(CAST(sht_inner.IsBreakApplicable AS TINYINT)) AS IsBreakApplicable,
+            MIN(CAST(sht_inner.IsNightShiftApplicable AS TINYINT)) AS IsNightShiftApplicable,
+           -- MIN(sht_inner.UpdatedOn) AS UpdatedOn,
+           -- MIN(sht_inner.UpdatedBy) AS UpdatedBy,
+            --MIN(CAST(sht_inner.DateCross AS TINYINT)) AS DateCross,
+            MIN(CAST(sht_inner.IsActive AS TINYINT)) AS IsActive,
+            MIN(sht_inner.AutoShift) AS AutoShift,
+            MIN(CAST(sht_inner.ShiftAllowance AS TINYINT)) AS ShiftAllowance
+        FROM tna.Rostering AS ro_inner
+        INNER JOIN tna.ShiftMst AS sht_inner 
+            ON ro_inner.ShiftId = sht_inner.ShiftId
+        WHERE ro_inner.EmpCode = re.ed_empcode
+        GROUP BY ro_inner.ShiftID
+        FOR JSON PATH
     ) AS ShiftDetails,
 
-    -- Location details JSON (without intime, outtime, and totalminutes)
+    -- Location details JSON
     (
-      SELECT 
-          gg.LocationID,
-          MIN(gg.georange) AS georange,
-          CAST(MAX(CAST(gg.rangeinkm AS int)) AS bit) AS rangeinkm,
-          MIN(gl.Latitude) AS Latitude,
-          MIN(gl.Longitude) AS Longitude,
-          MIN(gg.FromDate) AS FromDate,
-          MIN(gg.ToDate) AS ToDate,
-          MIN(gl.LocationAlias) AS LocationAlias
-      FROM tna.Rostering AS ro_loc
-      INNER JOIN GeoConfig.EmployeesLocationMapping AS gg 
-          ON ro_loc.EmpCode = gg.EmployeeCode
-      INNER JOIN GeoConfig.GeoConfigurationLocationMst gl
-          ON gg.LocationID = gl.ID
-      WHERE ro_loc.EmpCode = re.ed_empcode
-      GROUP BY gg.LocationID
-      FOR JSON PATH
+        SELECT 
+            gg.LocationID,
+            MIN(gg.georange) AS georange,
+            MAX(CAST(gg.rangeinkm AS INT)) AS rangeinkm,
+            MIN(gl.Latitude) AS Latitude,
+            MIN(gl.Longitude) AS Longitude,
+            MIN(gg.FromDate) AS FromDate,
+            MIN(gg.ToDate) AS ToDate,
+            MIN(gl.LocationAlias) AS LocationAlias
+        FROM tna.Rostering AS ro_loc
+        INNER JOIN GeoConfig.EmployeesLocationMapping AS gg 
+            ON ro_loc.EmpCode = gg.EmployeeCode
+        INNER JOIN GeoConfig.GeoConfigurationLocationMst gl
+            ON gg.LocationID = gl.ID
+        WHERE ro_loc.EmpCode = re.ed_empcode
+        GROUP BY gg.LocationID
+        FOR JSON PATH
     ) AS LocationDetails,
 
-    -- Separate IP Range JSON column
+    -- IP Range JSON
     (
         SELECT 
             geoip.IPFrom,
-            geoip.IPTo 
+            geoip.IPTo
         FROM GeoConfig.GeoConfigurationIPMaster geoip  
         WHERE geoip.GeoConfigurationID IN 
         (
@@ -101,11 +116,11 @@ INNER JOIN dbo.SETUP_EMPLOYEESTATUSMST AS se
 -- Compute boolean flags from geo config tables as separate columns
 CROSS APPLY (
     SELECT 
-        CASE WHEN CAST(MAX(CAST(gl.IPCheckEnabled AS INT)) AS BIT) = 1 THEN 'true' ELSE 'false' END AS IPCheckEnabled,
-        CASE WHEN CAST(MAX(CAST(gl.LocationCheckEnabled AS INT)) AS BIT) = 1 THEN 'true' ELSE 'false' END AS LocationCheckEnabled,
-        CASE WHEN CAST(MAX(CAST(gl.IPCheckEnabledOnMobile AS INT)) AS BIT) = 1 THEN 'true' ELSE 'false' END AS IPCheckEnabledOnMobile,
-        CASE WHEN CAST(MAX(CAST(el.PunchIn AS INT)) AS BIT) = 1 THEN 'true' ELSE 'false' END AS PunchIn,
-        CASE WHEN CAST(MAX(CAST(el.PunchOut AS INT)) AS BIT) = 1 THEN 'true' ELSE 'false' END AS PunchOut
+        CASE WHEN MAX(CAST(gl.IPCheckEnabled AS INT)) = 1 THEN 'true' ELSE 'false' END AS IPCheckEnabled,
+        CASE WHEN MAX(CAST(gl.LocationCheckEnabled AS INT)) = 1 THEN 'true' ELSE 'false' END AS LocationCheckEnabled,
+        CASE WHEN MAX(CAST(gl.IPCheckEnabledOnMobile AS INT)) = 1 THEN 'true' ELSE 'false' END AS IPCheckEnabledOnMobile,
+        CASE WHEN MAX(CAST(el.PunchIn AS INT)) = 1 THEN 'true' ELSE 'false' END AS PunchIn,
+        CASE WHEN MAX(CAST(el.PunchOut AS INT)) = 1 THEN 'true' ELSE 'false' END AS PunchOut
     FROM GeoConfig.GeoConfigurationLocationMst gl
     INNER JOIN GeoConfig.EmployeesLocationMapping el 
         ON gl.ID = el.LocationId
