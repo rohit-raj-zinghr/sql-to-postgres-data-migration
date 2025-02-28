@@ -35,7 +35,7 @@ SELECT TOP 10
     gc_bool.PunchIn,
     gc_bool.PunchOut,
 
-    -- Shift details JSON
+    -- Shift details JSON with merged attributes and new ShiftStart/ShiftEnd logic
     (
         SELECT 
             ro_inner.ShiftID,
@@ -48,8 +48,8 @@ SELECT TOP 10
             MIN(ro_inner.FromMin) AS FromMin,
             MIN(ro_inner.ToMin) AS ToMin,
             MIN(sht_inner.ShiftName) AS ShiftName,
-            MIN(ro_inner.Date) AS ShiftStart,
-            MAX(ro_inner.Date) AS ShiftEnd,
+            MIN(ShiftBlocks.ShiftStart) AS ShiftStart,  -- Updated ShiftStart
+            MAX(ShiftBlocks.ShiftEnd) AS ShiftEnd,      -- Updated ShiftEnd
             MIN(sht_inner.InTime) AS InTime,
             MAX(sht_inner.OutTime) AS OutTime,
             MAX(sht_inner.TotalMinutes) AS TotalMinutes,
@@ -57,21 +57,35 @@ SELECT TOP 10
             MIN(CAST(sht_inner.ISWorkBtwnShifttime AS TINYINT)) AS ISWorkBtwnShifttime,
             MIN(CAST(sht_inner.IsBreakApplicable AS TINYINT)) AS IsBreakApplicable,
             MIN(CAST(sht_inner.IsNightShiftApplicable AS TINYINT)) AS IsNightShiftApplicable,
-           -- MIN(sht_inner.UpdatedOn) AS UpdatedOn,
-           -- MIN(sht_inner.UpdatedBy) AS UpdatedBy,
-            --MIN(CAST(sht_inner.DateCross AS TINYINT)) AS DateCross,
             MIN(CAST(sht_inner.IsActive AS TINYINT)) AS IsActive,
             MIN(sht_inner.AutoShift) AS AutoShift,
             MIN(CAST(sht_inner.ShiftAllowance AS TINYINT)) AS ShiftAllowance
         FROM tna.Rostering AS ro_inner
         INNER JOIN tna.ShiftMst AS sht_inner 
             ON ro_inner.ShiftId = sht_inner.ShiftId
+        INNER JOIN (
+            SELECT 
+                ShiftID,
+                MIN(ShiftStart) AS ShiftStart,
+                MAX(ShiftEnd) AS ShiftEnd
+            FROM (
+                SELECT 
+                    ro.ShiftID,
+                    ro.Date AS ShiftStart,
+                    LEAD(ro.Date) OVER (PARTITION BY ro.EmpCode ORDER BY ro.Date) AS ShiftEnd,
+                    LAG(ro.ShiftID) OVER (PARTITION BY ro.EmpCode ORDER BY ro.Date) AS PrevShiftID
+                FROM tna.Rostering ro
+                WHERE ro.EmpCode = re.ed_empcode
+            ) AS ShiftBlocksInner
+            WHERE PrevShiftID IS NULL OR PrevShiftID <> ShiftID
+            GROUP BY ShiftID
+        ) AS ShiftBlocks ON ro_inner.ShiftID = ShiftBlocks.ShiftID
         WHERE ro_inner.EmpCode = re.ed_empcode
         GROUP BY ro_inner.ShiftID
         FOR JSON PATH
     ) AS ShiftDetails,
 
-    -- Location details JSON
+    -- Location details JSON (unchanged)
     (
         SELECT 
             gg.LocationID,
@@ -92,7 +106,7 @@ SELECT TOP 10
         FOR JSON PATH
     ) AS LocationDetails,
 
-    -- IP Range JSON
+    -- IP Range JSON (unchanged)
     (
         SELECT 
             geoip.IPFrom,
@@ -113,7 +127,7 @@ FROM reqrec_employeedetails AS re
 INNER JOIN dbo.SETUP_EMPLOYEESTATUSMST AS se 
     ON re.ED_Status = se.ESM_EmpStatusID
 
--- Compute boolean flags from geo config tables as separate columns
+-- Compute boolean flags (unchanged)
 CROSS APPLY (
     SELECT 
         CASE WHEN MAX(CAST(gl.IPCheckEnabled AS INT)) = 1 THEN 'true' ELSE 'false' END AS IPCheckEnabled,
@@ -131,5 +145,5 @@ WHERE EXISTS (
     FROM tna.Rostering AS ro
     WHERE ro.EmpCode = re.ed_empcode
 )
-ORDER BY re.ed_empcode ASC;
+ORDER BY re.ed_empcode;
  
