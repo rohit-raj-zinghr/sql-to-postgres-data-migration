@@ -1,5 +1,5 @@
 -----table create pehle in pgadmin
-CREATE TABLE public."Flatt" (
+CREATE TABLE public."Flattable" (
     EmpCode VARCHAR(100) PRIMARY KEY,
     ed_Salutation VARCHAR(100),
     ed_firstname VARCHAR(100),
